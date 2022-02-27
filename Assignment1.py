@@ -1,17 +1,18 @@
 import subprocess
 import os
 import time
+from black import nullcontext
 import boto3
 import requests
 import webbrowser
 from botocore.exceptions import ClientError
-from tomlkit import datetime
+import datetime
 
 
 resource = boto3.resource("ec2")
 client = boto3.client("ec2")
 s3_resource = boto3.resource("s3")
-s3_client = boto3.client("s3")
+s3_client = boto3.client("s3", region_name="eu-west-1")
 
 key_name = ""
 key_response = ""
@@ -109,34 +110,50 @@ except:
 # Print metadata
 
 bucket_name = ""
+string_list = list()
 
-try:
-    date_now = datetime.date
-    time_now = datetime.time
-    bucket_name = public_ip+"-"+f"{date_now}-{time_now}"
-    bucket_response = s3_resource.create_bucket(Bucket = bucket_name)
-    print(bucket_response)
-    print(f"Bucket created with name: {bucket_name}")
-except:
-    print("Bucket couldn't be created")
+datetime_now = str(datetime.datetime.now())
+string_list = datetime_now.split(" ")
+datetime_now = string_list[0] + string_list[1]
+string_list.clear()
+string_list = datetime_now.split("-")
+datetime_now = string_list[0] + string_list[1] + string_list[2]
+string_list.clear()
+string_list = datetime_now.split(":")
+datetime_now = string_list[0] + string_list[1] + string_list[2]
+string_list.clear()
+string_list = datetime_now.split(".")
+datetime_now = string_list[0] + string_list[1]
+bucket_name = "bencapperwit"+datetime_now
+print(bucket_name)
+location = {'LocationConstraint': "eu-west-1"}
+bucket_response = s3_client.create_bucket(Bucket = bucket_name, CreateBucketConfiguration = location, ACL = "public-read")
+print(bucket_response)
+waiter = s3_client.get_waiter('bucket_exists')
+waiter.wait(Bucket = bucket_name)
+print(f"Bucket created with name: {bucket_name}")
 
 
-try:
-    found_image = requests.get("https://witacsresources.s3-eu-west-1.amazonaws.com/image.jpg")
-    with open('found_image.jpg', 'wb') as f:
-        f.write(found_image.content)
-        f.close()
-    subprocess.run("chmod 644 found_image.jpg", shell=True)
-    print("Image permissions set")
-    put_response = s3_resource.Object(bucket_name, found_image).put(Body = open(found_image, "rb"))
-    print(put_response)
-    print("Image put in the bucket successfully")
-except:
-    print("Couldn't put the file in the bucket")
+
+
+
+found_image = requests.get("https://witacsresources.s3-eu-west-1.amazonaws.com/image.jpg")
+subprocess.run("chmod 777 found_image.jpg", shell=True)
+with open('found_image.jpg', 'wb') as f:
+    f.write(found_image.content)
+    f.close()
+open('found_image.jpg', 'rb')
+subprocess.run("chmod 400 found_image.jpg", shell=True)
+print("Image permissions set")
+put_response = s3_client.put_object(Body = found_image.content, Bucket = bucket_name, Key = "found_image.jpg", ACL="public-read")
+print(put_response)
+print("Image put in the bucket successfully")
+
 
 try:
     index_cmd = """
     touch index.html ; 
+    chmod 777 index.html ;
     echo '<html>\n' > index.html ; 
     echo '<img src="found_image.jpg"></img>\n' >> index.html
     """
@@ -144,9 +161,13 @@ try:
     print("index.html created")
     subprocess.run("chmod 400 index.html", shell=True)
     print("index.html permissions set")
-    index_response = s3_resource.Object(bucket_name, "index.html").put(Body = open("index.html", "rb"))
+    index_response = s3_client.put_object(Body = open("index.html", "rb"), Bucket = bucket_name, Key = "index.html", ACL="public-read", ContentType="text/html")
     print("index.html put in the bucket successfully")
-    web_config = s3_client.put_bucket_website(Bucket=bucket_name, WebsiteConfiguration = "website_configuration")
+    website_configuration = {
+    'ErrorDocument': {'Key': 'error.html'},
+    'IndexDocument': {'Suffix': 'index.html'},
+    }
+    web_config = s3_client.put_bucket_website(Bucket=bucket_name, WebsiteConfiguration = website_configuration)
     print("Bucket website configuration set")
 except:
     print("index.html not created")
