@@ -1,3 +1,4 @@
+from re import T
 import subprocess
 import time
 import boto3
@@ -43,6 +44,10 @@ echo '<br>' >> index.html
 echo 'Subnet: ' >> index.html
 MAC=$(curl http://169.254.169.254/latest/meta-data/mac)
 curl http://169.254.169.254/latest/meta-data/network/interfaces/macs/${MAC}/subnet-id >> index.html
+curl https://witacsresources.s3-eu-west-1.amazonaws.com/image.jpg -o /var/www/html/image.jpg
+chmod 777 /var/www/html/image.jpg
+echo '<br>' >> index.html
+echo '<img src="image.jpg"></img>' >> index.html
 cp index.html /var/www/html/index.html"""
 
 # Check if the keypair already exists
@@ -122,7 +127,8 @@ Instance running
 ---------------------------
 Keypair permissions set
 ---------------------------""")
-    ssh_command = f"ssh -o StrictHostKeyChecking=no -i {key_name}.pem ec2-user@{public_ip} 'echo Public IPV4: {public_ip}'"
+    time.sleep(10)
+    ssh_command = f"ssh -o StrictHostKeyChecking=no -i {key_name}.pem ec2-user@{public_ip} 'echo ; echo Public IPV4: {public_ip}'"
     subprocess.run(ssh_command, shell=True)
     print("""
 ---------------------------
@@ -135,6 +141,7 @@ Remote ssh echo completed
 ---------------------------
 Monitor script copied
 ---------------------------""")
+
 except:
     print("ec2 creation failed")
 
@@ -231,8 +238,8 @@ except:
 
 # Set permissions for monitor script
 try:
-    time.sleep(20)
-    permiss_cmd = f"""ssh -i {key_name}.pem ec2-user@{public_ip} 'chmod 700 monitor.sh ; 
+    time.sleep(5)
+    permiss_cmd = f"""ssh -o StrictHostKeyChecking=no -i {key_name}.pem ec2-user@{public_ip} 'chmod 700 monitor.sh ; 
         echo ---------------------------; 
         echo Monitor.sh permissions set ; 
         echo ---------------------------;
@@ -244,6 +251,7 @@ try:
         ./monitor.sh'
         """
     subprocess.run(permiss_cmd, shell=True)
+    time.sleep(40)
     webbrowser.open_new_tab(f"http://{public_ip}")
     webbrowser.open_new_tab(
         f"https://{bucket_name}.s3.{region}.amazonaws.com/index.html"
