@@ -1,13 +1,16 @@
-from re import T
 import subprocess
 import time
+import os
 import boto3
 import requests
 import webbrowser
 from botocore.exceptions import ClientError
 import datetime
 
+def subproc(cmd):
+    subprocess.run(cmd, shell=True)
 
+# Make function for subprocess.run
 # Setup global variables
 region = "eu-west-1"
 resource = boto3.resource("ec2")
@@ -65,9 +68,18 @@ try:
         assign_one_key = key_response["KeyMaterial"]
         key_name = key_response["KeyName"]
         key_id = key_response["KeyPairId"]
-        with open("assign_one.pem", "w") as f:
-            f.write(assign_one_key)
-            f.close()
+        if os.path.exists("assign_one.pem"):
+        # IF FILE DOES NOT EXIST DO A TOUCH
+            with open("assign_one.pem", "w") as f:
+                f.write(assign_one_key)
+                f.close()
+
+        else:
+            subproc("touch assign_one.pem")
+            #subprocess.run("touch assign_one.pem", shell=True)
+            with open("assign_one.pem", "w") as f:
+                f.write(assign_one_key)
+                f.close()
         print("""
 ---------------------------
 Keypair file created
@@ -92,7 +104,7 @@ try:
     grp_id.append(response["SecurityGroups"][0]["GroupId"])
     print("""
 ---------------------------
-Using the ssh-http security group
+Using the security group: ssh-http
 ---------------------------""")
 except ClientError as e:
     print("Couldnt find the ssh-http security group")
@@ -103,7 +115,7 @@ try:
         ImageId="ami-0bf84c42e04519c85",
         KeyName=key_name,
         UserData=user_data,
-        InstanceType="t2.micro",
+        InstanceType="t2.nano",
         SecurityGroupIds=grp_id,
         MinCount=1,
         MaxCount=1,
@@ -122,6 +134,7 @@ Instance running
     created_instance.reload()
     created_instance.wait_until_running()
     public_ip = created_instance.public_ip_address
+    subproc("chmod 400 assign_one.pem")
     subprocess.run("chmod 400 assign_one.pem", shell=True)
     print("""
 ---------------------------
@@ -129,14 +142,19 @@ Keypair permissions set
 ---------------------------""")
     time.sleep(10)
     ssh_command = f"ssh -o StrictHostKeyChecking=no -i {key_name}.pem ec2-user@{public_ip} 'echo ; echo Public IPV4: {public_ip}'"
-    subprocess.run(ssh_command, shell=True)
+    subproc(ssh_command)
+    #subprocess.run(ssh_command, shell=True)
     print("""
 ---------------------------
 Remote ssh echo completed
 ---------------------------""")
     # Secure copy monitor script onto instance
+    monitor_chmod_cmd = f"ssh -i {key_name}.pem ec2user@{public_ip} 'chmod 700 monitor.sh'"
     scp_cmd = f"scp -i {key_name}.pem monitor.sh ec2-user@{public_ip}:."
-    subprocess.run(scp_cmd, shell=True)
+    subproc(monitor_chmod_cmd)
+    subproc(scp_cmd)
+    #subprocess.run(monitor_chmod_cmd, shell=True)
+    #subprocess.run(scp_cmd, shell=True)
     print("""
 ---------------------------
 Monitor script copied
@@ -201,12 +219,14 @@ try:
     echo '<html>\n' > index.html ; 
     echo '<img src="found_image.jpg"></img>\n' >> index.html
     """
-    subprocess.run(index_cmd, shell=True)
+    subproc(index_cmd)
+    #subprocess.run(index_cmd, shell=True)
     print("""
 ---------------------------
 index.html created
 ---------------------------""")
-    subprocess.run("chmod 400 index.html", shell=True)
+    subproc("chmod 400 index.html")
+    #subprocess.run("chmod 400 index.html", shell=True)
     print("""
 ---------------------------
 index.html permissions set
@@ -250,7 +270,8 @@ try:
         echo                            ; 
         ./monitor.sh'
         """
-    subprocess.run(permiss_cmd, shell=True)
+    subproc(permiss_cmd)
+    #subprocess.run(permiss_cmd, shell=True)
     time.sleep(40)
     webbrowser.open_new_tab(f"http://{public_ip}")
     webbrowser.open_new_tab(
