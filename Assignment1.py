@@ -7,29 +7,36 @@ import webbrowser
 from botocore.exceptions import ClientError
 import datetime
 
+
 def subproc(cmd):
     subprocess.run(cmd, shell=True)
 
-# Make function for subprocess.run
-# Setup global variables
+def pretty_print(the_string):
+    print("------------------------------------------------------")
+    print(the_string)
+    print("------------------------------------------------------")
+
+# Global vars
 region = "eu-west-1"
-resource = boto3.resource("ec2")
-client = boto3.client("ec2")
+ec2_resource = boto3.resource("ec2")
+ec2_client = boto3.client("ec2")
 s3_resource = boto3.resource("s3")
 s3_client = boto3.client("s3", region_name=region)
+
+key_file_name = "assign_one.pem"
+sec_grp = "assignment_one"
 key_name = ""
 key_response = ""
-key_name_list = ["assign_one"]
 public_ip = ""
 bucket_name = ""
+assign_one_key = ""
+found_key_name = ""
+
 string_list = list()
-found_image = requests.get(
-    "https://witacsresources.s3-eu-west-1.amazonaws.com/image.jpg"
-)
-subprocess.run("chmod 777 found_image.jpg", shell=True)
-with open("found_image.jpg", "wb") as f:
-    f.write(found_image.content)
-    f.close()
+grp_id = list()
+key_name_list = ["assign_one"]
+
+image_url = "https://witacsresources.s3-eu-west-1.amazonaws.com/image.jpg"
 
 user_data = """
 #!/bin/bash
@@ -53,65 +60,119 @@ echo '<br>' >> index.html
 echo '<img src="image.jpg"></img>' >> index.html
 cp index.html /var/www/html/index.html"""
 
-# Check if the keypair already exists
+
+# Get image for bucket
 try:
-    found_key_name = client.describe_key_pairs(
+    found_image = requests.get(image_url)
+    subproc("chmod 777 found_image.jpg")
+    with open("found_image.jpg", "wb") as f:
+        f.write(found_image.content)
+        f.close()
+    pretty_print(f"Successfully retrieved image from {image_url}")
+except:
+    pretty_print(f"Failed to retrieve image from {image_url}")
+
+# Check if the assign_one keypair exists
+try:
+    found_key_name = ec2_client.describe_key_pairs(
         KeyNames=key_name_list)["KeyPairs"
         ][0]["KeyName"]
 except:
     found_key_name = ""
+    pretty_print("Keypair assign_one does not exist")
 
-# If the found key isnt "assign-one"
+# Delete any existing keypair named assign_one locally
+if os.path.exists(key_file_name):
+    subproc(f"rm -f {key_file_name}")
+    pretty_print("Deleted old keypair file locally")
+else:
+    pretty_print("No old keypairs found")
+
+# If there is already an AWS key named assign_one, delete it
+if found_key_name == key_name_list[0]:
+    try:
+        delete_key_resp = ec2_client.delete_key_pair(
+            KeyName = found_key_name
+        )
+        time.sleep(5)
+        pretty_print("Deleted old keypair from AWS")
+    except:
+        pretty_print(f"Could not delete the AWS keypair: {found_key_name}")
+
+# Keypair now deleted on both AWS and locally
+
+# Create a new keypair on AWS and save locally
 try:
-    if key_name_list[0] != found_key_name:
-        key_response = client.create_key_pair(KeyName="assign_one", KeyType="rsa")
-        assign_one_key = key_response["KeyMaterial"]
-        key_name = key_response["KeyName"]
-        key_id = key_response["KeyPairId"]
-        if os.path.exists("assign_one.pem"):
-        # IF FILE DOES NOT EXIST DO A TOUCH
-            with open("assign_one.pem", "w") as f:
-                f.write(assign_one_key)
-                f.close()
-
-        else:
-            subproc("touch assign_one.pem")
-            #subprocess.run("touch assign_one.pem", shell=True)
-            with open("assign_one.pem", "w") as f:
-                f.write(assign_one_key)
-                f.close()
-        print("""
----------------------------
-Keypair file created
----------------------------""")
-# If the found key is "assign-one", get its values
-    else:
-        key_response = client.describe_key_pairs(KeyNames=key_name_list)["KeyPairs"][0]
-        key_name = key_response["KeyName"]
-        key_id = key_response["KeyPairId"]
-        print(f"""
----------------------------
-Using keypair: {key_name}
----------------------------""")
+    key_response = ec2_client.create_key_pair(KeyName=key_name_list[0], KeyType="rsa")
+    assign_one_key = key_response["KeyMaterial"]
+    key_name = key_response["KeyName"]
+    pretty_print(f"Keypair {key_file_name} created on AWS")
 except:
-    print("Error creating keypair")
+    pretty_print(f"Keypair {key_file_name} could not be created on AWS")
 
+try:
+    subproc("touch assign_one.pem")
+    subproc("chmod 777 assign_one.pem")
+    with open(key_file_name, "w") as keyfile:
+        keyfile.write(assign_one_key)
+        keyfile.close()
+    pretty_print(f"Keypair {key_file_name} created locally")
+except:
+    pretty_print(f"Keypair {key_file_name} could not be created locally")
 
 try:
     # Check if security group already exists
-    response = client.describe_security_groups(GroupNames=["ssh-http"])
-    grp_id = list()
-    grp_id.append(response["SecurityGroups"][0]["GroupId"])
-    print("""
----------------------------
-Using the security group: ssh-http
----------------------------""")
-except ClientError as e:
-    print("Couldnt find the ssh-http security group")
+    desc_response = ec2_client.describe_security_groups(GroupNames=[sec_grp])
+    grp_id.append(desc_response["SecurityGroups"][0]["GroupId"])
+except:
+    pretty_print(f"Could not find the {sec_grp} security group")
 
-# Create the instance
+# grp_id isnt empty, use that security group
+if grp_id:
+    pretty_print(f"Using the security group: {sec_grp}")
+# grp_id is empty, create new security group
+else:
+    try:
+        sec_grp_resp = ec2_resource.create_security_group(GroupName=sec_grp, Description="Assignment1")
+        pretty_print(f"Created the security group: {sec_grp}")
+    except:
+        pretty_print(f"Could not create the security group: {sec_grp}")
+    # If the create function was successful, set ip permissions
+    if sec_grp_resp:
+        try:
+            sec_ingress_response = sec_grp_resp.authorize_ingress(
+                IpPermissions=[
+                    {
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "IpProtocol": "tcp",
+                        "IpRanges": [
+                            {"CidrIp": "0.0.0.0/0", "Description": "internet"},
+                        ],
+                    },
+                    {
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "IpProtocol": "tcp",
+                        "IpRanges": [
+                            {"CidrIp": "0.0.0.0/0", "Description": "internet"},
+                        ],
+                    },
+                ],
+            )
+            pretty_print(f"Security group rules set for: {sec_grp}")
+        except:
+            pretty_print("Security group rules not set")
+        try:
+            # Get the new security group id
+            desc_security = ec2_client.describe_security_groups(GroupNames=[sec_grp])
+            grp_id.append(desc_security["SecurityGroups"][0]["GroupId"])
+            pretty_print(f"Using the security group: {sec_grp}")
+        except:
+            pretty_print(f"Could not create the security group: {sec_grp}")
+
 try:
-    create_response = resource.create_instances(
+    create_response = ec2_resource.create_instances(
         ImageId="ami-0bf84c42e04519c85",
         KeyName=key_name,
         UserData=user_data,
@@ -120,48 +181,45 @@ try:
         MinCount=1,
         MaxCount=1,
     )
-    print("""
----------------------------
-Instance created
----------------------------""")
+    pretty_print(f"Instance created")
     created_instance = create_response[0]
     created_instance.wait_until_running()
-    print("""
----------------------------
-Instance running
----------------------------""")
-    # Reload and wait for instance
+    pretty_print(f"Instance running")
     created_instance.reload()
     created_instance.wait_until_running()
     public_ip = created_instance.public_ip_address
+except:
+    pretty_print("Could not create ec2 instance")
+
+try:
     subproc("chmod 400 assign_one.pem")
     subprocess.run("chmod 400 assign_one.pem", shell=True)
-    print("""
----------------------------
-Keypair permissions set
----------------------------""")
-    time.sleep(10)
+    pretty_print("Keypair permissions set")
+except:
+    pretty_print("Could not set keypair permissions")
+
+try:
     ssh_command = f"ssh -o StrictHostKeyChecking=no -i {key_name}.pem ec2-user@{public_ip} 'echo ; echo Public IPV4: {public_ip}'"
     subproc(ssh_command)
-    #subprocess.run(ssh_command, shell=True)
-    print("""
----------------------------
-Remote ssh echo completed
----------------------------""")
-    # Secure copy monitor script onto instance
-    monitor_chmod_cmd = f"ssh -i {key_name}.pem ec2user@{public_ip} 'chmod 700 monitor.sh'"
-    scp_cmd = f"scp -i {key_name}.pem monitor.sh ec2-user@{public_ip}:."
-    subproc(monitor_chmod_cmd)
-    subproc(scp_cmd)
-    #subprocess.run(monitor_chmod_cmd, shell=True)
-    #subprocess.run(scp_cmd, shell=True)
-    print("""
----------------------------
-Monitor script copied
----------------------------""")
-
+    pretty_print("Remote ssh echo completed")
 except:
-    print("ec2 creation failed")
+    pretty_print("Remote ssh echo failed")
+
+try:
+    monitor_chmod_cmd = f"ssh -i {key_name}.pem ec2user@{public_ip} 'chmod 700 monitor.sh'"
+    subproc(monitor_chmod_cmd)
+    pretty_print("Monitor script permissions set")
+except:
+    pretty_print("Monitor script permissions were not set")
+
+try:
+    scp_cmd = f"scp -i {key_name}.pem monitor.sh ec2-user@{public_ip}:."
+    subproc(scp_cmd)
+    pretty_print("Monitor script copied onto ec2 instance")
+except:
+    pretty_print("Monitor script was not copied onto ec2 instance")
+
+---------------------------------------------------------------------------------------------------------
 
 # Use datetime to get unique bucket name
 datetime_now = str(datetime.datetime.now())
@@ -283,3 +341,5 @@ Browser opened
 ---------------------------""")
 except:
     print("Couldn't open the browser")
+
+
