@@ -64,13 +64,40 @@ cp index.html /var/www/html/index.html"""
 # Get image for bucket
 try:
     found_image = requests.get(image_url)
-    subproc("chmod 777 found_image.jpg")
-    with open("found_image.jpg", "wb") as f:
-        f.write(found_image.content)
-        f.close()
     pretty_print(f"Successfully retrieved image from {image_url}")
 except:
-    pretty_print(f"Failed to retrieve image from {image_url}")
+    pretty_print(f"Could not retrieve image from {image_url}")
+
+if os.path.exists("found_image.jpg"):
+    try:
+        subproc("rm -f found_image.jpg")
+        pretty_print("Old image file deleted successfully")
+    except:
+        pretty_print("Could not delete the old image file")
+else:
+    pretty_print("No old image file found")
+
+# Create image file locally
+try:  
+    subproc("touch found_image.jpg")
+    pretty_print("Image file created locally")
+except:
+    pretty_print("Could not create image file locally")
+
+# If the image file was created locally
+if os.path.exists("found_image.jpg"):
+    try:
+        subproc("chmod 777 found_image.jpg")
+        pretty_print("Permissions set for found_image.jpg")
+    except:
+        pretty_print("Could not set found_image.jpg permissions")
+    try:
+        with open("found_image.jpg", "wb") as f:
+            f.write(found_image.content)
+            f.close()
+        pretty_print("Image content saved to found_image.jpg")
+    except:
+        pretty_print("Could not save image content to found_image.jpg")
 
 # Check if the assign_one keypair exists
 try:
@@ -199,18 +226,13 @@ except:
     pretty_print("Could not set keypair permissions")
 
 try:
-    ssh_command = f"ssh -o StrictHostKeyChecking=no -i {key_name}.pem ec2-user@{public_ip} 'echo ; echo Public IPV4: {public_ip}'"
+    ssh_command = f"ssh -o StrictHostKeyChecking=no -i {key_file_name} ec2-user@{public_ip} 'echo ; echo Public IPV4: {public_ip}'"
     subproc(ssh_command)
     pretty_print("Remote ssh echo completed")
 except:
     pretty_print("Remote ssh echo failed")
 
-try:
-    monitor_chmod_cmd = f"ssh -i {key_name}.pem ec2user@{public_ip} 'chmod 700 monitor.sh'"
-    subproc(monitor_chmod_cmd)
-    pretty_print("Monitor script permissions set")
-except:
-    pretty_print("Monitor script permissions were not set")
+
 
 try:
     scp_cmd = f"scp -i {key_name}.pem monitor.sh ec2-user@{public_ip}:."
@@ -219,7 +241,13 @@ try:
 except:
     pretty_print("Monitor script was not copied onto ec2 instance")
 
----------------------------------------------------------------------------------------------------------
+try:
+    monitor_chmod_cmd = f"ssh -i {key_name}.pem ec2user@{public_ip} 'chmod 700 monitor.sh'"
+    subproc(monitor_chmod_cmd)
+    pretty_print("Monitor script permissions set")
+except:
+    pretty_print("Monitor script permissions were not set")
+
 
 # Use datetime to get unique bucket name
 datetime_now = str(datetime.datetime.now())
@@ -245,50 +273,49 @@ bucket_response = s3_client.create_bucket(
 # Wait for the bucket to exist
 waiter = s3_client.get_waiter("bucket_exists")
 waiter.wait(Bucket=bucket_name)
-print(f"""
----------------------------
-Bucket created named: {bucket_name}
----------------------------""")
+pretty_print(f"Bucket created named: {bucket_name}")
 
-# Set image permissions and put in bucket
+# Set image permissions
 open("found_image.jpg", "rb")
 subprocess.run("chmod 400 found_image.jpg", shell=True)
-print("""
----------------------------
-Image permissions set
----------------------------""")
-put_response = s3_client.put_object(
-    Body=found_image.content,
-    Bucket=bucket_name,
-    Key="found_image.jpg",
-    ACL="public-read",
-)
-print("""
----------------------------
-Image put in the bucket
----------------------------
-    """)
+print(f"Image permissions set")
 
-# Create index.html, set permissions, put in bucket
+# Put image in bucket
+try:
+    put_response = s3_client.put_object(
+        Body=found_image.content,
+        Bucket=bucket_name,
+        Key="found_image.jpg",
+        ACL="public-read",
+    )
+    pretty_print("Image put in the bucket")
+except:
+    pretty_print("Could not put the image in the bucket")
+
+
+# Create index.html
 try:
     index_cmd = """
-    touch index.html ; 
-    chmod 777 index.html ;
-    echo '<html>\n' > index.html ; 
-    echo '<img src="found_image.jpg"></img>\n' >> index.html
-    """
+touch index.html ; 
+chmod 777 index.html ;
+echo '<html>\n' > index.html ; 
+echo '<img src="found_image.jpg"></img>\n' >> index.html
+"""
     subproc(index_cmd)
-    #subprocess.run(index_cmd, shell=True)
-    print("""
----------------------------
-index.html created
----------------------------""")
-    subproc("chmod 400 index.html")
-    #subprocess.run("chmod 400 index.html", shell=True)
-    print("""
----------------------------
-index.html permissions set
----------------------------""")
+    pretty_print("index.html created")
+except:
+    pretty_print("Could not create index.html")
+
+# If index.html was created, change permissions
+if os.path.exists("index.html"):
+    try:
+        subproc("chmod 400 index.html")
+        pretty_print("index.html permissions set")
+    except:
+        pretty_print("Could not set index.html permissions")
+
+# Put index.html in the bucket
+try:
     index_response = s3_client.put_object(
         Body=open("index.html", "rb"),
         Bucket=bucket_name,
@@ -296,10 +323,11 @@ index.html permissions set
         ACL="public-read",
         ContentType="text/html",
     )
-    print("""
----------------------------
-index.html put in the bucket
----------------------------""")
+    pretty_print("index.html put in the bucket")
+except:
+    pretty_print("Could not put index.html in the bucket")
+
+try:
     website_configuration = {
         "ErrorDocument": {"Key": "error.html"},
         "IndexDocument": {"Suffix": "index.html"},
@@ -307,10 +335,7 @@ index.html put in the bucket
     web_config = s3_client.put_bucket_website(
         Bucket=bucket_name, WebsiteConfiguration=website_configuration
     )
-    print("""
----------------------------
-Bucket website configuration set
----------------------------""")
+    print("Bucket website configuration set")
 except:
     print("index.html not created")
 
@@ -329,17 +354,12 @@ try:
         ./monitor.sh'
         """
     subproc(permiss_cmd)
-    #subprocess.run(permiss_cmd, shell=True)
-    time.sleep(40)
+    time.sleep(10)
     webbrowser.open_new_tab(f"http://{public_ip}")
     webbrowser.open_new_tab(
         f"https://{bucket_name}.s3.{region}.amazonaws.com/index.html"
     )
-    print("""
----------------------------
-Browser opened
----------------------------""")
+    pretty_print("Browser opened")
 except:
-    print("Couldn't open the browser")
-
+    pretty_print("Could not open the browser")
 
