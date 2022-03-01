@@ -7,6 +7,8 @@ import webbrowser
 from botocore.exceptions import ClientError
 import datetime
 
+def sleep(duration):
+    time.sleep(duration)
 
 def subproc(cmd):
     subprocess.run(cmd, shell=True)
@@ -70,15 +72,18 @@ except:
 
 if os.path.exists("found_image.jpg"):
     try:
+        sleep(1)
         subproc("rm -f found_image.jpg")
         pretty_print("Old image file deleted successfully")
     except:
         pretty_print("Could not delete the old image file")
 else:
+    sleep(1)
     pretty_print("No old image file found")
 
 # Create image file locally
-try:  
+try:
+    sleep(1)  
     subproc("touch found_image.jpg")
     pretty_print("Image file created locally")
 except:
@@ -87,11 +92,13 @@ except:
 # If the image file was created locally
 if os.path.exists("found_image.jpg"):
     try:
+        sleep(1)
         subproc("chmod 777 found_image.jpg")
         pretty_print("Permissions set for found_image.jpg")
     except:
         pretty_print("Could not set found_image.jpg permissions")
     try:
+        sleep(1)
         with open("found_image.jpg", "wb") as f:
             f.write(found_image.content)
             f.close()
@@ -101,6 +108,7 @@ if os.path.exists("found_image.jpg"):
 
 # Check if the assign_one keypair exists
 try:
+    sleep(1)
     found_key_name = ec2_client.describe_key_pairs(
         KeyNames=key_name_list)["KeyPairs"
         ][0]["KeyName"]
@@ -110,9 +118,11 @@ except:
 
 # Delete any existing keypair named assign_one locally
 if os.path.exists(key_file_name):
+    sleep(1)
     subproc(f"rm -f {key_file_name}")
     pretty_print("Deleted old keypair file locally")
 else:
+    sleep(1)
     pretty_print("No old keypairs found")
 
 # If there is already an AWS key named assign_one, delete it
@@ -121,7 +131,7 @@ if found_key_name == key_name_list[0]:
         delete_key_resp = ec2_client.delete_key_pair(
             KeyName = found_key_name
         )
-        time.sleep(5)
+        sleep(1)
         pretty_print("Deleted old keypair from AWS")
     except:
         pretty_print(f"Could not delete the AWS keypair: {found_key_name}")
@@ -130,6 +140,7 @@ if found_key_name == key_name_list[0]:
 
 # Create a new keypair on AWS and save locally
 try:
+    sleep(1)
     key_response = ec2_client.create_key_pair(KeyName=key_name_list[0], KeyType="rsa")
     assign_one_key = key_response["KeyMaterial"]
     key_name = key_response["KeyName"]
@@ -138,6 +149,7 @@ except:
     pretty_print(f"Keypair {key_file_name} could not be created on AWS")
 
 try:
+    sleep(1)
     subproc("touch assign_one.pem")
     subproc("chmod 777 assign_one.pem")
     with open(key_file_name, "w") as keyfile:
@@ -149,6 +161,7 @@ except:
 
 try:
     # Check if security group already exists
+    sleep(1)
     desc_response = ec2_client.describe_security_groups(GroupNames=[sec_grp])
     grp_id.append(desc_response["SecurityGroups"][0]["GroupId"])
 except:
@@ -156,10 +169,12 @@ except:
 
 # grp_id isnt empty, use that security group
 if grp_id:
+    sleep(1)
     pretty_print(f"Using the security group: {sec_grp}")
 # grp_id is empty, create new security group
 else:
     try:
+        sleep(1)
         sec_grp_resp = ec2_resource.create_security_group(GroupName=sec_grp, Description="Assignment1")
         pretty_print(f"Created the security group: {sec_grp}")
     except:
@@ -167,6 +182,8 @@ else:
     # If the create function was successful, set ip permissions
     if sec_grp_resp:
         try:
+            sleep(1)
+            # Ref: https://stackoverflow.com/questions/66441122/how-to-access-my-instance-through-ssh-writing-boto3-code
             sec_ingress_response = sec_grp_resp.authorize_ingress(
                 IpPermissions=[
                     {
@@ -192,6 +209,7 @@ else:
             pretty_print("Security group rules not set")
         try:
             # Get the new security group id
+            sleep(1)
             desc_security = ec2_client.describe_security_groups(GroupNames=[sec_grp])
             grp_id.append(desc_security["SecurityGroups"][0]["GroupId"])
             pretty_print(f"Using the security group: {sec_grp}")
@@ -219,22 +237,29 @@ except:
     pretty_print("Could not create ec2 instance")
 
 try:
+    sleep(2)
     subproc("chmod 400 assign_one.pem")
-    subprocess.run("chmod 400 assign_one.pem", shell=True)
     pretty_print("Keypair permissions set")
 except:
     pretty_print("Could not set keypair permissions")
 
 try:
+    sleep(2)
     ssh_command = f"ssh -o StrictHostKeyChecking=no -i {key_file_name} ec2-user@{public_ip} 'echo ; echo Public IPV4: {public_ip}'"
     subproc(ssh_command)
     pretty_print("Remote ssh echo completed")
 except:
     pretty_print("Remote ssh echo failed")
 
-
+try:
+    sleep(2)
+    subproc("chmod 777 monitor.sh")
+    pretty_print("Monitor.sh permissions set, ready to copy to AWS")
+except:
+    pretty_print("Monitor.sh permissions not set, error may occur copying to AWS")
 
 try:
+    sleep(2)
     scp_cmd = f"scp -i {key_name}.pem monitor.sh ec2-user@{public_ip}:."
     subproc(scp_cmd)
     pretty_print("Monitor script copied onto ec2 instance")
@@ -242,7 +267,8 @@ except:
     pretty_print("Monitor script was not copied onto ec2 instance")
 
 try:
-    monitor_chmod_cmd = f"ssh -i {key_name}.pem ec2user@{public_ip} 'chmod 700 monitor.sh'"
+    sleep(2)
+    monitor_chmod_cmd = f"ssh -i {key_file_name} ec2-user@{public_ip} 'chmod 700 monitor.sh'"
     subproc(monitor_chmod_cmd)
     pretty_print("Monitor script permissions set")
 except:
@@ -276,12 +302,14 @@ waiter.wait(Bucket=bucket_name)
 pretty_print(f"Bucket created named: {bucket_name}")
 
 # Set image permissions
+sleep(2)
 open("found_image.jpg", "rb")
 subprocess.run("chmod 400 found_image.jpg", shell=True)
-print(f"Image permissions set")
+pretty_print("Image permissions set")
 
 # Put image in bucket
 try:
+    sleep(2)
     put_response = s3_client.put_object(
         Body=found_image.content,
         Bucket=bucket_name,
@@ -295,6 +323,7 @@ except:
 
 # Create index.html
 try:
+    sleep(2)
     index_cmd = """
 touch index.html ; 
 chmod 777 index.html ;
@@ -309,6 +338,7 @@ except:
 # If index.html was created, change permissions
 if os.path.exists("index.html"):
     try:
+        sleep(2)
         subproc("chmod 400 index.html")
         pretty_print("index.html permissions set")
     except:
@@ -316,6 +346,7 @@ if os.path.exists("index.html"):
 
 # Put index.html in the bucket
 try:
+    sleep(2)
     index_response = s3_client.put_object(
         Body=open("index.html", "rb"),
         Bucket=bucket_name,
@@ -341,20 +372,20 @@ except:
 
 # Set permissions for monitor script
 try:
-    time.sleep(5)
+    sleep(2)
     permiss_cmd = f"""ssh -o StrictHostKeyChecking=no -i {key_name}.pem ec2-user@{public_ip} 'chmod 700 monitor.sh ; 
-        echo ---------------------------; 
+        echo ------------------------------------------------------; 
         echo Monitor.sh permissions set ; 
-        echo ---------------------------;
+        echo ------------------------------------------------------;
         echo                            ; 
-        echo ---------------------------;
+        echo ------------------------------------------------------;
         echo Executing monitor.sh ; 
-        echo ---------------------------;
+        echo ------------------------------------------------------;
         echo                            ; 
         ./monitor.sh'
         """
     subproc(permiss_cmd)
-    time.sleep(10)
+    time.sleep(12)
     webbrowser.open_new_tab(f"http://{public_ip}")
     webbrowser.open_new_tab(
         f"https://{bucket_name}.s3.{region}.amazonaws.com/index.html"
