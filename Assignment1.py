@@ -7,16 +7,23 @@ import webbrowser
 from botocore.exceptions import ClientError
 import datetime
 
+
 def sleep(duration):
     time.sleep(duration)
 
+
 def subproc(cmd):
     subprocess.run(cmd, shell=True)
+
 
 def pretty_print(the_string):
     print("------------------------------------------------------")
     print(the_string)
     print("------------------------------------------------------")
+    with open("log.txt", "a") as logfile:
+        logfile.write(str(datetime.datetime.now())[:-7] + ":  " + the_string + "\n")
+        logfile.close()
+
 
 # Global vars
 region = "eu-west-1"
@@ -62,11 +69,33 @@ echo '<br>' >> index.html
 echo '<img src="image.jpg"></img>' >> index.html
 cp index.html /var/www/html/index.html"""
 
+try:
+    if os.path.exists("log.txt"):
+        subproc("rm -f log.txt")
+        pretty_print("Deleted old log file")
+        sleep(1)
+except:
+    pretty_print("No old log file found")
+
+try:
+    subproc("touch log.txt")
+    pretty_print("Created a new log file")
+    sleep(1)
+except:
+    pretty_print("Could not create a new log file")
+
+try:
+    subproc("chmod 700 log.txt")
+    pretty_print("Log permissions set")
+    sleep(1)
+except:
+    pretty_print("Could not set log permissions")
 
 # Get image for bucket
 try:
     found_image = requests.get(image_url)
     pretty_print(f"Successfully retrieved image from {image_url}")
+    sleep(1)
 except:
     pretty_print(f"Could not retrieve image from {image_url}")
 
@@ -83,7 +112,7 @@ else:
 
 # Create image file locally
 try:
-    sleep(1)  
+    sleep(1)
     subproc("touch found_image.jpg")
     pretty_print("Image file created locally")
 except:
@@ -109,9 +138,9 @@ if os.path.exists("found_image.jpg"):
 # Check if the assign_one keypair exists
 try:
     sleep(1)
-    found_key_name = ec2_client.describe_key_pairs(
-        KeyNames=key_name_list)["KeyPairs"
-        ][0]["KeyName"]
+    found_key_name = ec2_client.describe_key_pairs(KeyNames=key_name_list)["KeyPairs"][
+        0
+    ]["KeyName"]
 except:
     found_key_name = ""
     pretty_print("Keypair assign_one does not exist")
@@ -128,9 +157,7 @@ else:
 # If there is already an AWS key named assign_one, delete it
 if found_key_name == key_name_list[0]:
     try:
-        delete_key_resp = ec2_client.delete_key_pair(
-            KeyName = found_key_name
-        )
+        delete_key_resp = ec2_client.delete_key_pair(KeyName=found_key_name)
         sleep(1)
         pretty_print("Deleted old keypair from AWS")
     except:
@@ -175,7 +202,9 @@ if grp_id:
 else:
     try:
         sleep(1)
-        sec_grp_resp = ec2_resource.create_security_group(GroupName=sec_grp, Description="Assignment1")
+        sec_grp_resp = ec2_resource.create_security_group(
+            GroupName=sec_grp, Description="Assignment1"
+        )
         pretty_print(f"Created the security group: {sec_grp}")
     except:
         pretty_print(f"Could not create the security group: {sec_grp}")
@@ -260,7 +289,7 @@ except:
 
 try:
     sleep(2)
-    scp_cmd = f"scp -i {key_name}.pem monitor.sh ec2-user@{public_ip}:."
+    scp_cmd = f"scp -o StrictHostKeyChecking=no -i {key_file_name} monitor.sh ec2-user@{public_ip}:."
     subproc(scp_cmd)
     pretty_print("Monitor script copied onto ec2 instance")
 except:
@@ -268,7 +297,7 @@ except:
 
 try:
     sleep(2)
-    monitor_chmod_cmd = f"ssh -i {key_file_name} ec2-user@{public_ip} 'chmod 700 monitor.sh'"
+    monitor_chmod_cmd = f"ssh -o StrictHostKeyChecking=no -i {key_file_name} ec2-user@{public_ip} 'chmod 700 monitor.sh'"
     subproc(monitor_chmod_cmd)
     pretty_print("Monitor script permissions set")
 except:
@@ -393,4 +422,3 @@ try:
     pretty_print("Browser opened")
 except:
     pretty_print("Could not open the browser")
-
