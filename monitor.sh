@@ -1,8 +1,9 @@
 #!/usr/bin/bash
 #
 # Some basic monitoring functionality; Tested on Amazon Linux 2
-#
+# CPU usage ref: https://www.unix.com/unix-for-beginners-questions-and-answers/283279-required-cpu-memory-df-output-mail-multiple-servers.html
 # Routing table ref: https://geekflare.com/linux-performance-commands/
+
 INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 MEMORYUSAGE=$(free -m | awk 'NR==2{printf "%.2f%%", $3*100/$2 }')
 PROCESSES=$(expr $(ps -A | grep -c .) - 1)
