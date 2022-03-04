@@ -8,7 +8,6 @@ import webbrowser
 from boto3.dynamodb.conditions import Key
 
 
-
 # Database item class
 class db_item:
     def __init__(self, title, year, artist=None):
@@ -20,13 +19,8 @@ class db_item:
 # Database get item method
 def get_item(table, title, year):
     try:
-        item_response = table.get_item(
-        Key={
-            'title': title,
-            'year': year
-        }
-    )
-        found_item = item_response['Item']
+        item_response = table.get_item(Key={"title": title, "year": year})
+        found_item = item_response["Item"]
         pretty_print(f"Found Item: {found_item}")
     except:
         pretty_print(f"Could not find the item: {title}")
@@ -48,7 +42,7 @@ def subproc(cmd, pass_str, err_str, sleep_dur):
 
 
 # Work with files with print statements
-def work_with_file(fname,opt,the_str,pass_str,err_str,sleep_dur):
+def work_with_file(fname, opt, the_str, pass_str, err_str, sleep_dur):
     sleep(sleep_dur)
     try:
         with open(fname, opt) as file:
@@ -69,7 +63,6 @@ def pretty_print(the_string):
         logfile.close()
 
 
-
 # Global vars
 # Boto3 requirements
 region = "eu-west-1"
@@ -77,8 +70,8 @@ ec2_resource = boto3.resource("ec2")
 ec2_client = boto3.client("ec2")
 s3_resource = boto3.resource("s3")
 s3_client = boto3.client("s3", region_name=region)
-db_client = boto3.client('dynamodb')
-db_resource = boto3.resource('dynamodb')
+db_client = boto3.client("dynamodb")
+db_resource = boto3.resource("dynamodb")
 
 # Strings
 key_file_name = "assign_one.pem"
@@ -87,6 +80,7 @@ table_name = "music"
 image_name = "found_image.jpg"
 log_name = "log.txt"
 index_file = "index.html"
+ami_resp = ""
 key_name = ""
 key_response = ""
 public_ip = ""
@@ -100,11 +94,14 @@ grp_id = list()
 key_name_list = ["assign_one"]
 
 # Database objects
-music = db_item("Test Title",2022,"John")
+music = db_item("Test Title", 2022, "John")
 music_two = db_item("Title ", 2020, "Item")
 
 # Url
 image_url = "https://witacsresources.s3-eu-west-1.amazonaws.com/image.jpg"
+
+# Inst Tag
+tag = {"Key": "Name", "Value": key_name_list[0]}
 
 # Script
 user_data = """
@@ -113,6 +110,8 @@ yum update -y
 yum install httpd -y
 systemctl enable httpd
 systemctl start httpd
+systemctl start sshd.service
+systemctl start ssh.service
 echo '<html>' > index.html
 echo 'Private IP address: ' >> index.html
 curl http://169.254.169.254/latest/meta-data/local-ipv4 >> index.html
@@ -129,83 +128,29 @@ echo '<br>' >> index.html
 echo '<img src="image.jpg"></img>' >> index.html
 cp index.html /var/www/html/index.html"""
 
+
+
 # If old log exists
 if os.path.exists(log_name):
-    # Delete old log
-    subproc(
-        f"rm -f {log_name}",
-        "Deleted old log file",
-        "No old log file found",
-        1
-    )
+    # Delete
+    subproc(f"rm -f {log_name}", "Deleted old log file", "No old log file found", 1)
 # Create new log
 subproc(
-    f"touch {log_name}",
-    "Created a new log file",
-    "Could not create a new log file",
-    1
+    f"touch {log_name}", "Created a new log file", "Could not create a new log file", 1
 )
 # Set log permissions
 subproc(
-    f"chmod 700 {log_name}",
-    "Log permissions set",
-    "Could not set log permissions",
-    1
+    f"chmod 700 {log_name}", "Log permissions set", "Could not set log permissions", 1
 )
 
 
-# Get image for bucket
-try:
-    found_image = requests.get(image_url)
-    pretty_print(f"Successfully retrieved image from {image_url}")
-    sleep(1)
-except:
-    pretty_print(f"Could not retrieve image from {image_url}")
-
-# If an old image exists
-if os.path.exists(image_name):
-    # Delete it
-    subproc(
-        f"rm -f {image_name}",
-        "Old image file deleted successfully",
-        "Could not delete the old image file",
-        1
-    )
-else:
-    sleep(1)
-    pretty_print("No old image file found")
-
-# Create image file locally
-subproc(
-    f"touch {image_name}",
-    "Image file created locally",
-    "Could not create image file locally",
-    1
-)
-
-# If the image file was created locally
-if os.path.exists(image_name):
-    subproc(
-        f"chmod 777 {image_name}",
-        f"Permissions set for {image_name}",
-        f"Could not set {image_name} permissions",
-        1
-    )
-    work_with_file(
-        image_name,
-        "wb",
-        found_image.content,
-        f"Image content saved to {image_name}",
-        f"Could not save image content to {image_name}",
-        1
-    )
 
 # Check if the assign_one keypair exists
 try:
     sleep(1)
-    found_key_name = ec2_client.describe_key_pairs(KeyNames=key_name_list)["KeyPairs"][
-        0
-    ]["KeyName"]
+    found_key_name = ec2_client.describe_key_pairs(
+        KeyNames=key_name_list
+    )["KeyPairs"][0]["KeyName"]
 except:
     found_key_name = ""
     pretty_print("Keypair assign_one does not exist")
@@ -216,7 +161,7 @@ if os.path.exists(key_file_name):
         f"rm -f {key_file_name}",
         "Deleted old keypair file locally",
         "Could not delete old local keypair",
-        1
+        1,
     )
 else:
     sleep(1)
@@ -225,7 +170,9 @@ else:
 # If there is already an AWS key named assign_one, delete it
 if found_key_name == key_name_list[0]:
     try:
-        delete_key_resp = ec2_client.delete_key_pair(KeyName=found_key_name)
+        delete_key_resp = ec2_client.delete_key_pair(
+            KeyName=found_key_name
+        )
         sleep(1)
         pretty_print("Deleted old keypair from AWS")
     except:
@@ -236,7 +183,10 @@ if found_key_name == key_name_list[0]:
 # Create a new keypair on AWS
 try:
     sleep(1)
-    key_response = ec2_client.create_key_pair(KeyName=key_name_list[0], KeyType="rsa")
+    key_response = ec2_client.create_key_pair(
+        KeyName=key_name_list[0],
+        KeyType="rsa"
+    )
     assign_one_key = key_response["KeyMaterial"]
     key_name = key_response["KeyName"]
     pretty_print(f"Keypair {key_file_name} created on AWS")
@@ -248,7 +198,7 @@ subproc(
     f"touch {key_file_name}",
     f"Created local file: {key_file_name}",
     f"Could not create local file: {key_file_name}",
-    1
+    1,
 )
 
 # Set keypair permissions to work with it
@@ -256,7 +206,7 @@ subproc(
     f"chmod 777 {key_file_name}",
     f"Set {key_file_name} permissions",
     f"Could not set {key_file_name} permissions",
-    1
+    1,
 )
 
 # Save keypair data to file
@@ -266,15 +216,20 @@ work_with_file(
     assign_one_key,
     f"Keypair {key_file_name} created locally",
     f"Keypair {key_file_name} could not be created locally",
-    1
+    1,
 )
+
 
 
 try:
     # Check if security group already exists
     sleep(1)
-    desc_response = ec2_client.describe_security_groups(GroupNames=[sec_grp])
-    grp_id.append(desc_response["SecurityGroups"][0]["GroupId"])
+    desc_response = ec2_client.describe_security_groups(
+        GroupNames=[sec_grp]
+        )
+    grp_id.append(desc_response[
+        "SecurityGroups"][0]["GroupId"]
+        )
 except:
     pretty_print(f"Could not find the {sec_grp} security group")
 
@@ -329,10 +284,30 @@ else:
         except:
             pretty_print(f"Could not create the security group: {sec_grp}")
 
+
+
+# Get image AMI by desc as ->
+# aws ssm get-parameters --names /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2 --region eu-west-1 >> log.txt"""
+# returns 2nd most recent ami?
+try:
+    ami_resp = ec2_client.describe_images(
+        Filters=[
+            {
+                "Name": "description",
+                "Values": [
+                    "Amazon Linux 2 Kernel 5.10 AMI 2.0.20220218.1 x86_64 HVM gp2"
+                ],
+            }
+        ]
+    )["Images"][0]["ImageId"]
+    pretty_print(f"Successfully retrieved image AMI: {ami_resp}")
+except:
+    pretty_print(f"Could not retrieve the image AMI")
+
 # Create the instance
 try:
     create_response = ec2_resource.create_instances(
-        ImageId="ami-0bf84c42e04519c85",
+        ImageId=ami_resp,
         KeyName=key_name,
         UserData=user_data,
         InstanceType="t2.nano",
@@ -350,29 +325,38 @@ try:
 except:
     pretty_print("Could not create ec2 instance")
 
+
+
+# Add a tag to the instance
+try:
+    created_instance.create_tags(Tags=[tag])
+    pretty_print(f"Tag added to instance: {tag}")
+except:
+    pretty_print(f"Could not add tag to the instance: {tag}")
+
+
+
 # Set keypair file permissions
+# https://community.perforce.com/s/article/6210#:~:text=ssh%20directory%20permissions%20should%20be,%2D%2D%2D%2D%2D).
 subproc(
-    f"chmod 400 {key_file_name}",
+    f"chmod 600 {key_file_name}",
     "Keypair permissions set",
     "Could not set keypair permissions",
-    2
+    2,
 )
 
 # ssh into instance and print public ip
 ssh_command = f"ssh -o StrictHostKeyChecking=no -i {key_file_name} ec2-user@{public_ip} 'echo ; echo Public IPV4: {public_ip}'"
-subproc(
-    ssh_command,
-    "Remote ssh echo completed",
-    "Remote ssh echo failed",
-    2
-)
+subproc(ssh_command, "Remote ssh echo completed", "Remote ssh echo failed", 2)
+
+
 
 # Set monitor script permissions before copying
 subproc(
     "chmod 777 monitor.sh",
     "Monitor.sh permissions set, ready to copy to AWS",
     "Monitor.sh permissions not set, error may occur copying to AWS",
-    2
+    2,
 )
 
 # Secure copy monitor script onto instance
@@ -380,7 +364,7 @@ subproc(
     f"scp -o StrictHostKeyChecking=no -i {key_file_name} monitor.sh ec2-user@{public_ip}:.",
     "Monitor script copied onto ec2 instance",
     "Monitor script was not copied onto ec2 instance",
-    2
+    2,
 )
 
 # Set monitor permissions
@@ -388,14 +372,16 @@ subproc(
     f"ssh -o StrictHostKeyChecking=no -i {key_file_name} ec2-user@{public_ip} 'chmod 700 monitor.sh'",
     "Monitor script permissions set",
     "Monitor script permissions were not set",
-    2
+    2,
 )
+
+
 
 # Delete old music db table
 try:
     sleep(2)
     delete_table_resp = db_client.delete_table(
-        TableName = table_name
+        TableName=table_name
     )
     pretty_print("Deleted old database table")
 except:
@@ -407,29 +393,14 @@ try:
     table_create_response = db_client.create_table(
         TableName=table_name,
         KeySchema=[
-            {
-                'AttributeName': 'year',
-                'KeyType': 'HASH' # Partition Key
-            },
-            {
-                'AttributeName': 'title',
-                'KeyType': 'RANGE' # Sort Key
-            }
+            {"AttributeName": "year", "KeyType": "HASH"},  # Partition Key
+            {"AttributeName": "title", "KeyType": "RANGE"},  # Sort Key
         ],
         AttributeDefinitions=[
-            {
-                'AttributeName': 'year',
-                'AttributeType': 'N'
-            },
-            {
-                'AttributeName': 'title',
-                'AttributeType': 'S'
-            },
+            {"AttributeName": "year", "AttributeType": "N"},
+            {"AttributeName": "title", "AttributeType": "S"},
         ],
-        ProvisionedThroughput={
-            'ReadCapacityUnits': 100,
-            'WriteCapacityUnits': 100
-        }
+        ProvisionedThroughput={"ReadCapacityUnits": 100, "WriteCapacityUnits": 100},
     )
     pretty_print(f"Database table created: {table_name}")
 except:
@@ -437,7 +408,7 @@ except:
 
 # Get the table resource and load data
 try:
-    music_table = db_resource.Table('music')
+    music_table = db_resource.Table("music")
     music_table.load()
     pretty_print("Waiting for the table...")
     music_table.wait_until_exists()
@@ -449,11 +420,7 @@ except:
 try:
     sleep(2)
     music_table.put_item(
-        Item={
-            'title': music.title,
-            'year': music.year,
-            'artist': music.artist
-        }
+        Item={"title": music.title, "year": music.year, "artist": music.artist}
     )
     pretty_print(f"Created item: {music.title}")
 except:
@@ -461,24 +428,15 @@ except:
 
 # Get the item just created
 sleep(2)
-get_item(
-    music_table,
-    music.title,
-    music.year
-)
+get_item(music_table, music.title, music.year)
 
 # Update the item just created
 try:
     sleep(2)
     music_table.update_item(
-        Key={
-            'title': music.title,
-            'year': music.year
-        },
-        UpdateExpression='SET artist = :val',
-        ExpressionAttributeValues={
-            ':val': "Ben"
-        }
+        Key={"title": music.title, "year": music.year},
+        UpdateExpression="SET artist = :val",
+        ExpressionAttributeValues={":val": "Ben"},
     )
     pretty_print(f"Updated {music.title} successfully")
 except:
@@ -486,19 +444,15 @@ except:
 
 # Show update result
 sleep(2)
-get_item(
-    music_table,
-    music.title,
-    music.year
-)
+get_item(music_table, music.title, music.year)
 
 # Delete the item
 try:
     sleep(2)
     music_table.delete_item(
         Key={
-            'title': music.title,
-            'year': music.year,
+            "title": music.title,
+            "year": music.year,
         }
     )
     print(f"Deleted the item: {music.title}")
@@ -512,9 +466,9 @@ with music_table.batch_writer() as batch:
             sleep(1)
             batch.put_item(
                 Item={
-                'title': music_two.title + str(i + 1),
-                'year': music_two.year + i,
-                'artist': music_two.artist + " " + str(i + 1),
+                    "title": music_two.title + str(i + 1),
+                    "year": music_two.year + i,
+                    "artist": music_two.artist + " " + str(i + 1),
                 }
             )
             pretty_print(f"Created item: {music_two.title + str(i + 1)}")
@@ -525,12 +479,13 @@ with music_table.batch_writer() as batch:
 try:
     sleep(2)
     title_query_response = music_table.query(
-        KeyConditionExpression=Key('year').eq(2022)
+        KeyConditionExpression=Key("year").eq(2022)
     )
-    result = title_query_response['Items']
+    result = title_query_response["Items"]
     print(f"Query found the item: {result[0]}")
 except:
     print(f"Could not find item")
+
 
 
 # Use datetime to get unique bucket name
@@ -548,12 +503,12 @@ string_list = datetime_now.split(".")
 datetime_now = string_list[0] + string_list[1]
 bucket_name = "bencapperwit" + datetime_now
 
+
+
 # Create the bucket
 location = {"LocationConstraint": region}
 bucket_response = s3_client.create_bucket(
-    Bucket=bucket_name,
-    CreateBucketConfiguration=location,
-    ACL="public-read"
+    Bucket=bucket_name, CreateBucketConfiguration=location, ACL="public-read"
 )
 
 # Wait for the bucket to exist
@@ -561,14 +516,16 @@ waiter = s3_client.get_waiter("bucket_exists")
 waiter.wait(Bucket=bucket_name)
 pretty_print(f"Bucket created named: {bucket_name}")
 
-# Set image permissions
-open(image_name, "rb")
-subproc(
-    f"chmod 400 {image_name}",
-    "Image permissions set",
-    "Could not set image permissions",
-    2
-)
+
+
+# Get image for bucket
+try:
+    found_image = requests.get(image_url)
+    pretty_print(f"Successfully retrieved image from {image_url}")
+    sleep(1)
+except:
+    pretty_print(f"Could not retrieve image from {image_url}")
+    found_image=""
 
 # Put image in bucket
 try:
@@ -584,6 +541,7 @@ except:
     pretty_print("Could not put the image in the bucket")
 
 
+
 # Create index.html
 index_cmd = f"""
 touch {index_file} ; 
@@ -591,13 +549,7 @@ chmod 777 {index_file} ;
 echo '<html>\n' > {index_file} ; 
 echo '<img src="found_image.jpg"></img>\n' >> {index_file}
 """
-subproc(
-    index_cmd,
-    f"{index_file} created",
-    f"Could not create {index_file}",
-    2
-)
-
+subproc(index_cmd, f"{index_file} created", f"Could not create {index_file}", 2)
 
 # If index.html was created, change permissions
 if os.path.exists(index_file):
@@ -605,9 +557,8 @@ if os.path.exists(index_file):
         f"chmod 400 {index_file}",
         f"{index_file} permissions set",
         f"Could not set {index_file} permissions",
-        2
+        2,
     )
-
 
 # Put index.html in the bucket
 try:
@@ -623,6 +574,7 @@ try:
 except:
     pretty_print(f"Could not put {index_file} in the bucket")
 
+# Set static web hosting
 try:
     website_configuration = {
         "ErrorDocument": {"Key": "error.html"},
@@ -635,8 +587,9 @@ try:
 except:
     print("Bucket website configuration not set")
 
-# Set permissions for monitor script
 
+
+# Set permissions for monitor script
 permiss_cmd = f"""ssh -o StrictHostKeyChecking=no -i {key_name}.pem ec2-user@{public_ip} 'chmod 700 monitor.sh ; 
 echo ------------------------------------------------------; 
 echo Monitor.sh permissions set ; 
@@ -649,17 +602,17 @@ echo                            ;
 ./monitor.sh'
 """
 subproc(
-        permiss_cmd,
-        "Monitor.sh executed successfully",
-        "Could not execute Monitor.sh",
-        2
-    )
+    permiss_cmd, "Monitor.sh executed successfully", "Could not execute Monitor.sh", 2
+)
+
+
+
 # Open web brower tabs
 try:
     time.sleep(2)
     webbrowser.open_new_tab(f"http://{public_ip}")
     webbrowser.open_new_tab(
-        f"https://{bucket_name}.s3.{region}.amazonaws.com/index.html"
+        f"http://{bucket_name}.s3-website-{region}.amazonaws.com"
     )
     webbrowser.open_new_tab(
         f"https://{region}.console.aws.amazon.com/dynamodbv2/home?region={region}#tables"
@@ -668,4 +621,7 @@ try:
 except:
     pretty_print("Could not open the browser")
 
+
+
+# Finished
 pretty_print("Script Finished")
