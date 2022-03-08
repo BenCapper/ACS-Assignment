@@ -32,13 +32,21 @@ def sleep(duration):
 
 
 # Run subprocess commands wrapped in try/except
-def subproc(cmd, pass_str, err_str, sleep_dur):
+def subproc(cmd, pass_str, err_str, sleep_dur, output=None):
     sleep(sleep_dur)
-    try:
-        subprocess.run(cmd, shell=True)
-        pretty_print(pass_str)
-    except:
-        pretty_print(err_str)
+    if output is True:
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True)
+            pretty_print(pass_str)
+            return result
+        except:
+            pretty_print(err_str)
+    else:
+        try:
+            subprocess.run(cmd, shell=True)
+            pretty_print(pass_str)
+        except:
+            pretty_print(err_str)
 
 
 # Work with files with print statements
@@ -134,14 +142,6 @@ cp index.html /var/www/html/index.html"""
 if os.path.exists(log_name):
     # Delete
     subproc(f"rm -f {log_name}", "Deleted old log file", "No old log file found", 1)
-# Create new log
-subproc(
-    f"touch {log_name}", "Created a new log file", "Could not create a new log file", 1
-)
-# Set log permissions
-subproc(
-    f"chmod 700 {log_name}", "Log permissions set", "Could not set log permissions", 1
-)
 
 
 
@@ -192,22 +192,6 @@ try:
     pretty_print(f"Keypair {key_file_name} created on AWS")
 except:
     pretty_print(f"Keypair {key_file_name} could not be created on AWS")
-
-# Create keypair file
-subproc(
-    f"touch {key_file_name}",
-    f"Created local file: {key_file_name}",
-    f"Could not create local file: {key_file_name}",
-    1,
-)
-
-# Set keypair permissions to work with it
-subproc(
-    f"chmod 777 {key_file_name}",
-    f"Set {key_file_name} permissions",
-    f"Could not set {key_file_name} permissions",
-    1,
-)
 
 # Save keypair data to file
 work_with_file(
@@ -337,9 +321,8 @@ except:
 
 
 # Set keypair file permissions
-# https://community.perforce.com/s/article/6210#:~:text=ssh%20directory%20permissions%20should%20be,%2D%2D%2D%2D%2D).
 subproc(
-    f"chmod 600 {key_file_name}",
+    f"chmod 400 {key_file_name}",
     "Keypair permissions set",
     "Could not set keypair permissions",
     2,
@@ -347,17 +330,27 @@ subproc(
 
 # ssh into instance and print public ip
 ssh_command = f"ssh -o StrictHostKeyChecking=no -i {key_file_name} ec2-user@{public_ip} 'echo ; echo Public IPV4: {public_ip}'"
-subproc(ssh_command, "Remote ssh echo completed", "Remote ssh echo failed", 2)
-
-
-
-# Set monitor script permissions before copying
-subproc(
-    "chmod 777 monitor.sh",
-    "Monitor.sh permissions set, ready to copy to AWS",
-    "Monitor.sh permissions not set, error may occur copying to AWS",
+result = subproc(
+    ssh_command,
+    "Remote ssh echo completed",
+    "Remote ssh echo failed",
     2,
+    True
 )
+
+# First ssh attempt failed, keep trying
+while result.returncode != 0:
+    pretty_print("Failed ssh attempt, trying again...")
+    result = subproc(
+    ssh_command,
+    "Remote ssh echo completed",
+    "Remote ssh echo failed",
+    2,
+    True
+)
+pretty_print(str(result.stdout)[4:-3])
+
+
 
 # Secure copy monitor script onto instance
 subproc(
@@ -383,6 +376,9 @@ try:
     delete_table_resp = db_client.delete_table(
         TableName=table_name
     )
+    pretty_print("Deleting an old table")
+    waiter = db_client.get_waiter("table_not_exists")
+    waiter.wait(TableName=table_name)
     pretty_print("Deleted old database table")
 except:
     pretty_print("No previously made database table to delete")
@@ -412,9 +408,9 @@ try:
     music_table.load()
     pretty_print("Waiting for the table...")
     music_table.wait_until_exists()
-    pretty_print(f"Successfully loaded {table_name} data")
+    pretty_print(f"Successfully loaded the {table_name} table")
 except:
-    pretty_print(f"Could not load {table_name} data")
+    pretty_print(f"Could not load the {table_name} table")
 
 # Put an item in the music table
 try:
@@ -589,13 +585,8 @@ except:
 
 
 
-# Set permissions for monitor script
-permiss_cmd = f"""ssh -o StrictHostKeyChecking=no -i {key_name}.pem ec2-user@{public_ip} 'chmod 700 monitor.sh ; 
-echo ------------------------------------------------------; 
-echo Monitor.sh permissions set ; 
-echo ------------------------------------------------------;
-echo                            ; 
-echo ------------------------------------------------------;
+# Execute monitor script
+permiss_cmd = f"""ssh -o StrictHostKeyChecking=no -i {key_name}.pem ec2-user@{public_ip} 'echo ------------------------------------------------------;
 echo Executing monitor.sh ; 
 echo ------------------------------------------------------;
 echo                            ; 
